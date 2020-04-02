@@ -1,5 +1,7 @@
 # dscar-querly
 
+[![CircleCI](https://circleci.com/gh/moneyforward/dscar-querly.svg?style=svg)](https://circleci.com/gh/moneyforward/dscar-querly)
+
 Delta [Querly](https://github.com/soutaro/querly) reports running on CircleCI
 
 See https://circleci.com/orbs/registry/orb/moneyforward/dscar-querly for details.
