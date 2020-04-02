@@ -1,0 +1,80 @@
+description: Analyze code statically using stylelint
+parameters:
+  starting-points:
+    description: Specify the path of starting to search for files to analyze (Multiple paths can be specified by separating them with line feed)
+    type: string
+    default: "."
+  analysis-arguments:
+    description: Arguments of analysis command
+    type: string
+    default: ""
+  error-pattern:
+    description: Specify the pattern if you want to detect analyzing errors from the standard error
+    type: string
+    default: '.*'
+  analysis-results-path:
+    description: "Specify the path to save the analysis results if you need to change it (default: /tmp/dscar/analysis-results)"
+    type: string
+    default: ""
+  no-analysis-output-timeout:
+    description: Elapsed time the command can run without output. The string is a decimal with unit suffix, such as “20m”, “1.25h”, “5s”
+    type: string
+    default: 10m
+  prepare:
+    description: Specify the required steps before analysis if necessary
+    type: steps
+    default:
+      - install-analyzer
+  redirecting-output:
+    description: Specify "/dev/null" if you do not want to display the analysis results on the standard output
+    type: enum
+    enum: ["/dev/stdout", "/dev/stderr", "/dev/null"]
+    default: "/dev/null"
+  max-procs:
+    description: Specify the maximum number of processes to run at the same time
+    type: integer
+    default: 1
+steps:
+  - dscar/analyze:
+      step-name: Analyze code statically using Querly
+      analysis-name: Querly
+      analysis-command: querly
+      analysis-arguments: << parameters.analysis-arguments >> --format=json
+      prepare:
+        - steps: << parameters.prepare >>
+        - run: sudo apt-get install jq
+        - run:
+            name: declare ANALYSIS_ARGUMENTS TRANSFORMATION_ARGUMENTS
+            command: |
+              set -x
+
+              ANALYSIS_COMMAND=check
+              declare -ax ANALYSIS_ARGUMENTS=("${ANALYSIS_COMMAND}" "${ANALYSIS_ARGUMENTS[@]}")
+              if [ ! -e 'querly.yml' ] && echo "${ANALYSIS_ARGUMENTS[@]}" | grep -qvE '(^|\s)--config(\s+|=)'
+              then
+                TEMP=$(mktemp)
+                { echo 'rules: []'; echo 'preprocessor:'; echo 'check: []'; } > "${TEMP}"
+                ANALYSIS_ARGUMENTS+=(--config "${TEMP}")
+              fi
+              echo "$(declare -p ANALYSIS_ARGUMENTS)" >> $BASH_ENV
+
+              FILTER="$(
+              cat \<<-"EOT" | tr -s ' \n' ' '
+              map(
+                (.issues | map({ name: .script, source: .rule.id, message: .rule.messages | join("\n"), line: .location.start[0], column: .location.start[1] }))
+                +
+                (.errors | map({ name: .path, source: "", message: .error.message, line: "", column: "" }))
+              ) | flatten | "<checkstyle>\(
+                map(@html "<file name=\"\(.name)\"><error source=\"\(.source)\" message=\"\(.message)\" line=\"\(.line)\" column=\"\(.column)\" /></file>")|join("")
+              )</checkstyle>"
+              EOT
+              )"
+              declare -ax TRANSFORMATION_ARGUMENTS=( -srM "$FILTER" )
+              echo "$(declare -p TRANSFORMATION_ARGUMENTS)" >> $BASH_ENV
+      error-pattern: << parameters.error-pattern >>
+      transformation-command: jq
+      starting-points: << parameters.starting-points >>
+      analysis-results-path: << parameters.analysis-results-path >>
+      no-output-timeout: << parameters.no-analysis-output-timeout >>
+      redirecting-output: << parameters.redirecting-output >>
+      max-procs: << parameters.max-procs >>
